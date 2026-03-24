@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ARPLAY — WebXR Video Player</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;600;700&family=DM+Mono:wght@300;400&display=swap');
+
+:root {
+  --bg: #080a0e;
+  --surface: #0d1117;
+  --card: #131820;
+  --border: rgba(255,255,255,0.08);
+  --accent: #00e5ff;
+  --accent2: #ff6b35;
+  --text: #e2e8f0;
+  --muted: #4a5568;
+  --success: #00d68f;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Oxanium', sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scanline overlay */
+body::after {
+  content:'';
+  position:fixed;
+  inset:0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,229,255,0.012) 2px,
+    rgba(0,229,255,0.012) 4px
+  );
+  pointer-events:none;
+  z-index:999;
+}
+
+/* Animated grid bg */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+  background-size:48px 48px;
+  pointer-events:none;
+  z-index:0;
+  animation: gridDrift 20s linear infinite;
+}
+
+@keyframes gridDrift {
+  from { background-position: 0 0; }
+  to   { background-position: 48px 48px; }
+}
+
+#landing {
+  position:relative;
+  z-index:1;
+  max-width:560px;
+  margin:0 auto;
+  padding:60px 24px 80px;
+}
+
+/* Header */
+.logo {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:48px;
+}
+
+.logo-icon {
+  width:40px;
+  height:40px;
+  border:1.5px solid var(--accent);
+  border-radius:8px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  position:relative;
+  overflow:hidden;
+}
+
+.logo-icon::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  background: linear-gradient(135deg, rgba(0,229,255,0.15), transparent);
+}
+
+.logo-icon svg { position:relative; z-index:1; }
+
+.logo-name {
+  font-size:22px;
+  font-weight:700;
+  letter-spacing:4px;
+  color:var(--accent);
+}
+
+.logo-sub {
+  font-family:'DM Mono', monospace;
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:2px;
+  margin-top:2px;
+}
+
+/* Status badge */
+.status {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  background:rgba(0,229,255,0.06);
+  border:1px solid rgba(0,229,255,0.2);
+  padding:6px 14px;
+  border-radius:100px;
+  font-family:'DM Mono', monospace;
+  font-size:11px;
+  color:var(--accent);
+  letter-spacing:1px;
+  margin-bottom:32px;
+}
+
+.status-dot {
+  width:6px;
+  height:6px;
+  border-radius:50%;
+  background:var(--accent);
+  animation:pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,100%{ opacity:1; transform:scale(1); }
+  50%{ opacity:.4; transform:scale(0.7); }
+}
+
+h1 {
+  font-size:clamp(28px,7vw,42px);
+  font-weight:700;
+  line-height:1.15;
+  letter-spacing:-0.5px;
+  margin-bottom:12px;
+}
+
+h1 em {
+  font-style:normal;
+  color:var(--accent);
+}
+
+.sub {
+  font-family:'DM Mono', monospace;
+  font-size:13px;
+  color:var(--muted);
+  line-height:1.8;
+  margin-bottom:40px;
+}
+
+/* Input card */
+.input-card {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:24px;
+  margin-bottom:16px;
+  position:relative;
+  overflow:hidden;
+}
+
+.input-card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity:.4;
+}
+
+.input-label {
+  font-family:'DM Mono', monospace;
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:2px;
+  text-transform:uppercase;
+  margin-bottom:12px;
+}
+
+.input-row {
+  display:flex;
+  gap:8px;
+}
+
+#url-input {
+  flex:1;
+  background:rgba(255,255,255,0.04);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:12px 16px;
+  color:var(--text);
+  font-family:'DM Mono', monospace;
+  font-size:13px;
+  outline:none;
+  transition:border-color 0.2s;
+  min-width:0;
+}
+
+#url-input:focus {
+  border-color:rgba(0,229,255,0.4);
+}
+
+#url-input::placeholder {
+  color:var(--muted);
+}
+
+.btn {
+  background:rgba(0,229,255,0.1);
+  border:1px solid rgba(0,229,255,0.3);
+  color:var(--accent);
+  font-family:'Oxanium', sans-serif;
+  font-size:12px;
+  font-weight:600;
+  padding:12px 16px;
+  border-radius:8px;
+  cursor:pointer;
+  white-space:nowrap;
+  transition:all 0.2s;
+  letter-spacing:1px;
+}
+
+.btn:hover {
+  background:rgba(0,229,255,0.2);
+  border-color:rgba(0,229,255,0.6);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, rgba(0,229,255,0.2), rgba(0,229,255,0.08));
+  border:1px solid var(--accent);
+  color:var(--accent);
+  font-size:14px;
+  padding:16px 24px;
+  width:100%;
+  border-radius:10px;
+  margin-top:12px;
+  letter-spacing:2px;
+}
+
+.btn-primary:hover {
+  background: rgba(0,229,255,0.25);
+  box-shadow: 0 0 24px rgba(0,229,255,0.2);
+}
+
+.btn-primary:disabled {
+  opacity:.3;
+  cursor:not-allowed;
+}
+
+/* AR button special */
+#btn-ar {
+  background: linear-gradient(135deg, rgba(0,229,255,0.15), rgba(255,107,53,0.1));
+  border:1px solid var(--accent);
+  color:#fff;
+  font-size:15px;
+  padding:18px 24px;
+  width:100%;
+  border-radius:12px;
+  letter-spacing:3px;
+  position:relative;
+  overflow:hidden;
+}
+
+#btn-ar::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.1), transparent);
+  transform:translateX(-100%);
+  transition:transform 0.4s;
+}
+
+#btn-ar:hover::before { transform:translateX(100%); }
+#btn-ar:hover { box-shadow:0 0 32px rgba(0,229,255,0.25); }
+
+/* Recent links */
+#recent-section {
+  margin-top:16px;
+  display:none;
+}
+
+.recent-label {
+  font-family:'DM Mono', monospace;
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:2px;
+  margin-bottom:8px;
+}
+
+.recent-item {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  margin-bottom:6px;
+  cursor:pointer;
+  transition:all 0.2s;
+}
+
+.recent-item:hover {
+  border-color:rgba(0,229,255,0.3);
+  background:rgba(0,229,255,0.04);
+}
+
+.recent-ext {
+  font-family:'DM Mono', monospace;
+  font-size:9px;
+  background:rgba(0,229,255,0.15);
+  border:1px solid rgba(0,229,255,0.3);
+  color:var(--accent);
+  padding:2px 6px;
+  border-radius:4px;
+  flex-shrink:0;
+}
+
+.recent-url {
+  font-family:'DM Mono', monospace;
+  font-size:11px;
+  color:var(--muted);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+/* Warnings */
+.warn {
+  background:rgba(255,107,53,0.06);
+  border:1px solid rgba(255,107,53,0.2);
+  border-radius:10px;
+  padding:14px 16px;
+  font-family:'DM Mono', monospace;
+  font-size:11px;
+  color:rgba(255,107,53,0.8);
+  line-height:1.7;
+  margin-top:16px;
+}
+
+.info {
+  background:rgba(0,229,255,0.04);
+  border:1px solid rgba(0,229,255,0.1);
+  border-radius:10px;
+  padding:14px 16px;
+  font-family:'DM Mono', monospace;
+  font-size:11px;
+  color:rgba(0,229,255,0.6);
+  line-height:1.7;
+  margin-top:16px;
+}
+
+/* Three.js canvas */
+#c {
+  display:none;
+  position:fixed;
+  inset:0;
+  width:100% !important;
+  height:100% !important;
+}
+
+/* AR Overlay (DOM overlay inside AR session) */
+#ar-overlay {
+  display:none;
+  position:fixed;
+  inset:0;
+  z-index:100;
+  pointer-events:none;
+}
+
+#ar-controls {
+  position:absolute;
+  bottom:40px;
+  left:50%;
+  transform:translateX(-50%);
+  display:flex;
+  gap:12px;
+  pointer-events:all;
+}
+
+.ar-btn {
+  background:rgba(8,10,14,0.85);
+  border:1px solid rgba(0,229,255,0.4);
+  color:var(--accent);
+  font-family:'Oxanium', sans-serif;
+  font-weight:600;
+  font-size:13px;
+  letter-spacing:1px;
+  padding:12px 20px;
+  border-radius:100px;
+  cursor:pointer;
+  backdrop-filter:blur(12px);
+  transition:all 0.2s;
+  pointer-events:all;
+}
+
+.ar-btn:hover {
+  background:rgba(0,229,255,0.15);
+}
+
+.ar-btn.active {
+  background:rgba(0,229,255,0.2);
+  border-color:var(--accent);
+}
+
+#ar-status {
+  position:absolute;
+  top:40px;
+  left:50%;
+  transform:translateX(-50%);
+  background:rgba(8,10,14,0.8);
+  border:1px solid rgba(0,229,255,0.2);
+  padding:8px 20px;
+  border-radius:100px;
+  font-family:'DM Mono', monospace;
+  font-size:11px;
+  color:var(--accent);
+  letter-spacing:1px;
+  backdrop-filter:blur(8px);
+  white-space:nowrap;
+  pointer-events:none;
+}
+
+/* Toast */
+#toast {
+  position:fixed;
+  bottom:24px;
+  left:50%;
+  transform:translateX(-50%) translateY(80px);
+  background:var(--success);
+  color:#000;
+  font-weight:700;
+  font-size:12px;
+  letter-spacing:1px;
+  padding:10px 20px;
+  border-radius:100px;
+  transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  z-index:9999;
+  white-space:nowrap;
+}
+
+#toast.show { transform:translateX(-50%) translateY(0); }
+
+@keyframes fadeIn {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.input-card, .status, h1, .sub {
+  animation: fadeIn 0.5s ease both;
+}
+
+.status      { animation-delay:0.1s; }
+h1           { animation-delay:0.2s; }
+.sub         { animation-delay:0.3s; }
+.input-card  { animation-delay:0.4s; }
+</style>
+</head>
+<body>
+
+<!-- ===== LANDING UI ===== -->
+<div id="landing">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+        <rect x="2" y="5" width="16" height="10" rx="2" stroke="#00e5ff" stroke-width="1.2"/>
+        <circle cx="10" cy="10" r="2.5" fill="#00e5ff" opacity=".6"/>
+        <line x1="2" y1="8" x2="0" y2="8" stroke="#00e5ff" stroke-width="1.2"/>
+        <line x1="18" y1="8" x2="20" y2="8" stroke="#00e5ff" stroke-width="1.2"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-name">ARPLAY</div>
+      <div class="logo-sub">WebXR · Quest 3</div>
+    </div>
+  </div>
+
+  <div class="status">
+    <div class="status-dot"></div>
+    <span id="xr-status-text">Đang kiểm tra WebXR...</span>
+  </div>
+
+  <h1>Video nổi<br>trong <em>không gian thật</em></h1>
+  <p class="sub">Dán link mp4 → nhấn Enter AR<br>→ màn hình ảo float ngay trong phòng bạn.</p>
+
+  <!-- URL input -->
+  <div class="input-card">
+    <div class="input-label">// Nguồn video</div>
+    <div class="input-row">
+      <input id="url-input" type="url" placeholder="https://example.com/video.mp4" autocomplete="off" autocorrect="off" spellcheck="false"/>
+      <button class="btn" onclick="pasteClipboard()">PASTE</button>
+    </div>
+    <button class="btn-primary" onclick="loadVideo()" id="btn-load">▶ XEM TRƯỚC</button>
+  </div>
+
+  <!-- AR launch -->
+  <div class="input-card">
+    <div class="input-label">// Chế độ AR</div>
+    <button id="btn-ar" class="btn" onclick="enterAR()" disabled>
+      ⬡ &nbsp;ENTER AR — PASSTHROUGH
+    </button>
+  </div>
+
+  <!-- Recent -->
+  <div id="recent-section">
+    <div class="recent-label">// Gần đây</div>
+    <div id="recent-list"></div>
+  </div>
+
+  <div class="info" id="hint">
+    ℹ️ Mở trang này trên Quest 3 Browser để dùng AR.<br>
+    Trên PC/mobile thì xem được preview bình thường.
+  </div>
+</div>
+
+<!-- ===== AR OVERLAY (hiện trong AR session) ===== -->
+<div id="ar-overlay">
+  <div id="ar-status">AIM CONTROLLER → BẤM TRIGGER ĐỂ ĐẶT</div>
+  <div id="ar-controls">
+    <button class="ar-btn" onclick="arTogglePlay()" id="ar-play-btn">⏸ PAUSE</button>
+    <button class="ar-btn" onclick="arToggleMove()" id="ar-move-btn">↔ DI CHUYỂN</button>
+    <button class="ar-btn" onclick="exitAR()">✕ THOÁT</button>
+  </div>
+</div>
+
+<!-- Three.js canvas -->
+<canvas id="c"></canvas>
+
+<!-- Toast -->
+<div id="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ========== STATE ==========
+const state = {
+  url: '',
+  videoEl: null,
+  scene: null,
+  camera: null,
+  renderer: null,
+  videoMesh: null,
+  reticle: null,
+  hitTestSource: null,
+  hitTestSourceRequested: false,
+  placed: false,
+  moveMode: false,
+  playing: false,
+  xrSession: null,
+  localSpace: null,
+  viewerSpace: null,
+};
+
+const STORAGE_KEY = 'arplay_recent';
+
+// ========== INIT ==========
+async function init() {
+  // Check WebXR
+  if (navigator.xr) {
+    const arSupported = await navigator.xr.isSessionSupported('immersive-ar').catch(()=>false);
+    document.getElementById('xr-status-text').textContent =
+      arSupported ? 'WebXR AR — Sẵn sàng ✓' : 'WebXR — Không hỗ trợ AR trên thiết bị này';
+    if (arSupported) {
+      document.getElementById('btn-ar').disabled = false;
+      document.getElementById('hint').style.display = 'none';
+    }
+  } else {
+    document.getElementById('xr-status-text').textContent = 'WebXR — Không hỗ trợ';
+  }
+  loadRecent();
+}
+
+// ========== CLIPBOARD ==========
+async function pasteClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text && text.startsWith('http')) {
+      document.getElementById('url-input').value = text;
+      toast('✓ Đã paste từ clipboard');
+    } else {
+      toast('Clipboard không có URL hợp lệ');
+    }
+  } catch(e) {
+    // fallback: focus input
+    document.getElementById('url-input').focus();
+    toast('Bấm Ctrl+V để paste thủ công');
+  }
+}
+
+// ========== RECENT ==========
+function saveRecent(url) {
+  let list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  list = [url, ...list.filter(u => u !== url)].slice(0, 5);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+function loadRecent() {
+  const list = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  if (!list.length) return;
+  document.getElementById('recent-section').style.display = 'block';
+  const container = document.getElementById('recent-list');
+  container.innerHTML = '';
+  list.forEach(url => {
+    const ext = (url.match(/\.(mp4|mkv|m3u8|webm)/i) || ['','MP4'])[1].toUpperCase();
+    const short = url.length > 55 ? url.slice(0,55)+'…' : url;
+    const el = document.createElement('div');
+    el.className = 'recent-item';
+    el.innerHTML = `<span class="recent-ext">${ext}</span><span class="recent-url">${short}</span>`;
+    el.onclick = () => {
+      document.getElementById('url-input').value = url;
+      toast('✓ Đã chọn');
+    };
+    container.appendChild(el);
+  });
+}
+
+// ========== LOAD VIDEO (preview) ==========
+function loadVideo() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { toast('Nhập URL trước'); return; }
+  state.url = url;
+  saveRecent(url);
+  loadRecent();
+  createVideo(url);
+  toast('▶ Video đã tải — nhấn Enter AR để xem');
+}
+
+function createVideo(url) {
+  if (state.videoEl) {
+    state.videoEl.pause();
+    state.videoEl.remove();
+  }
+  const v = document.createElement('video');
+  v.src = url;
+  v.crossOrigin = 'anonymous';
+  v.loop = true;
+  v.muted = false;
+  v.playsInline = true;
+  v.preload = 'auto';
+  v.style.display = 'none';
+  document.body.appendChild(v);
+  state.videoEl = v;
+}
+
+// ========== THREE.JS SETUP ==========
+function setupThree() {
+  if (state.renderer) return;
+
+  state.scene = new THREE.Scene();
+  state.camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.01, 100);
+
+  state.renderer = new THREE.WebGLRenderer({
+    canvas: document.getElementById('c'),
+    antialias: true,
+    alpha: true,           // transparent background → passthrough shows through
+  });
+  state.renderer.setPixelRatio(window.devicePixelRatio);
+  state.renderer.setSize(window.innerWidth, window.innerHeight);
+  state.renderer.xr.enabled = true;
+  state.renderer.setClearColor(0x000000, 0); // fully transparent
+
+  // Lighting
+  state.scene.add(new THREE.AmbientLight(0xffffff, 1));
+
+  // Reticle (placement indicator)
+  const rGeo = new THREE.RingGeometry(0.06, 0.08, 32).rotateX(-Math.PI/2);
+  const rMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, side: THREE.DoubleSide });
+  state.reticle = new THREE.Mesh(rGeo, rMat);
+  state.reticle.matrixAutoUpdate = false;
+  state.reticle.visible = false;
+  state.scene.add(state.reticle);
+}
+
+// ========== CREATE VIDEO SCREEN ==========
+function createVideoScreen() {
+  if (state.videoMesh) {
+    state.scene.remove(state.videoMesh);
+  }
+
+  const url = state.url || document.getElementById('url-input').value.trim();
+  if (!url) return;
+
+  if (!state.videoEl) createVideo(url);
+
+  const texture = new THREE.VideoTexture(state.videoEl);
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.format = THREE.RGBFormat;
+
+  // 16:9 screen, 1.4m wide
+  const geo = new THREE.PlaneGeometry(1.6, 0.9);
+  const mat = new THREE.MeshBasicMaterial({
+    map: texture,
+    side: THREE.DoubleSide,
+  });
+
+  // Border frame
+  const frameGeo = new THREE.PlaneGeometry(1.66, 0.96);
+  const frameMat = new THREE.MeshBasicMaterial({
+    color: 0x00e5ff,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.3,
+  });
+
+  state.videoMesh = new THREE.Group();
+  const frame = new THREE.Mesh(frameGeo, frameMat);
+  frame.position.z = -0.001;
+  const screen = new THREE.Mesh(geo, mat);
+  state.videoMesh.add(frame);
+  state.videoMesh.add(screen);
+
+  // Position 2m in front, 1.4m height
+  state.videoMesh.position.set(0, 1.4, -2);
+  state.videoMesh.visible = false; // hidden until placed
+  state.scene.add(state.videoMesh);
+
+  state.placed = false;
+}
+
+// ========== ENTER AR ==========
+async function enterAR() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { toast('Nhập URL video trước'); return; }
+
+  state.url = url;
+  saveRecent(url);
+  createVideo(url);
+  setupThree();
+  createVideoScreen();
+
+  try {
+    const session = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay', 'anchors'],
+      domOverlay: { root: document.getElementById('ar-overlay') },
+    });
+
+    state.xrSession = session;
+    state.hitTestSourceRequested = false;
+    state.hitTestSource = null;
+    state.placed = false;
+
+    state.renderer.xr.setReferenceSpaceType('local');
+    await state.renderer.xr.setSession(session);
+
+    // Setup controllers
+    const ctrl = state.renderer.xr.getController(0);
+    ctrl.addEventListener('select', onARSelect);
+    state.scene.add(ctrl);
+
+    const ctrl2 = state.renderer.xr.getController(1);
+    ctrl2.addEventListener('select', onARSelect);
+    state.scene.add(ctrl2);
+
+    // Show AR UI
+    document.getElementById('landing').style.display = 'none';
+    document.getElementById('c').style.display = 'block';
+    document.getElementById('ar-overlay').style.display = 'block';
+
+    state.renderer.setAnimationLoop(renderAR);
+
+    session.addEventListener('end', onAREnd);
+
+    updateARStatus('AIM CONTROLLER → BẤM TRIGGER ĐỂ ĐẶT');
+
+  } catch(err) {
+    toast('Lỗi: ' + err.message);
+    console.error(err);
+  }
+}
+
+// ========== AR RENDER LOOP ==========
+function renderAR(timestamp, frame) {
+  if (!frame) return;
+
+  const session = state.renderer.xr.getSession();
+  const refSpace = state.renderer.xr.getReferenceSpace();
+
+  // Setup hit-test source once
+  if (!state.hitTestSourceRequested) {
+    session.requestReferenceSpace('viewer').then(vs => {
+      session.requestHitTestSource({ space: vs }).then(src => {
+        state.hitTestSource = src;
+      });
+    });
+    session.addEventListener('end', () => {
+      state.hitTestSourceRequested = false;
+      state.hitTestSource = null;
+    });
+    state.hitTestSourceRequested = true;
+  }
+
+  // Hit-test
+  if (state.hitTestSource) {
+    const results = frame.getHitTestResults(state.hitTestSource);
+    if (results.length > 0 && !state.placed) {
+      const hit = results[0];
+      const pose = hit.getPose(refSpace);
+      state.reticle.visible = true;
+      state.reticle.matrix.fromArray(pose.transform.matrix);
+    } else {
+      if (state.placed) state.reticle.visible = false;
+    }
+  }
+
+  state.renderer.render(state.scene, state.camera);
+}
+
+// ========== AR SELECT (place screen) ==========
+function onARSelect() {
+  if (state.placed && !state.moveMode) return;
+
+  if (state.reticle.visible && state.videoMesh) {
+    // Place screen at reticle position, face the camera
+    state.videoMesh.position.setFromMatrixPosition(state.reticle.matrix);
+    state.videoMesh.position.y += 0.5; // lift up a bit
+    state.videoMesh.visible = true;
+    state.reticle.visible = false;
+    state.placed = true;
+    state.moveMode = false;
+
+    document.getElementById('ar-move-btn').classList.remove('active');
+
+    // Auto-play
+    if (state.videoEl) {
+      state.videoEl.play().then(() => {
+        state.playing = true;
+        document.getElementById('ar-play-btn').textContent = '⏸ PAUSE';
+      }).catch(() => {
+        state.videoEl.muted = true;
+        state.videoEl.play();
+        state.playing = true;
+      });
+    }
+
+    updateARStatus('VIDEO ĐANG PHÁT ✓');
+  }
+}
+
+// ========== AR CONTROLS ==========
+function arTogglePlay() {
+  if (!state.videoEl) return;
+  if (state.playing) {
+    state.videoEl.pause();
+    state.playing = false;
+    document.getElementById('ar-play-btn').textContent = '▶ PLAY';
+  } else {
+    state.videoEl.play();
+    state.playing = true;
+    document.getElementById('ar-play-btn').textContent = '⏸ PAUSE';
+  }
+}
+
+function arToggleMove() {
+  state.moveMode = !state.moveMode;
+  state.placed = !state.moveMode;
+  state.reticle.visible = state.moveMode;
+  document.getElementById('ar-move-btn').classList.toggle('active', state.moveMode);
+  updateARStatus(state.moveMode ? 'AIM → BẤM TRIGGER ĐỂ DI CHUYỂN' : 'VIDEO ĐANG PHÁT ✓');
+}
+
+function updateARStatus(text) {
+  document.getElementById('ar-status').textContent = text;
+}
+
+// ========== EXIT AR ==========
+function exitAR() {
+  if (state.xrSession) {
+    state.xrSession.end();
+  }
+}
+
+function onAREnd() {
+  state.renderer.setAnimationLoop(null);
+  document.getElementById('landing').style.display = 'block';
+  document.getElementById('c').style.display = 'none';
+  document.getElementById('ar-overlay').style.display = 'none';
+
+  if (state.videoEl) {
+    state.videoEl.pause();
+    state.playing = false;
+  }
+  state.placed = false;
+  state.moveMode = false;
+  state.hitTestSourceRequested = false;
+  state.hitTestSource = null;
+  toast('Đã thoát AR');
+}
+
+// ========== UTILS ==========
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+window.addEventListener('resize', () => {
+  if (state.renderer) {
+    state.renderer.setSize(window.innerWidth, window.innerHeight);
+    state.camera.aspect = window.innerWidth / window.innerHeight;
+    state.camera.updateProjectionMatrix();
+  }
+});
+
+// ========== START ==========
+init();
+</script>
+</body>
+</html>
